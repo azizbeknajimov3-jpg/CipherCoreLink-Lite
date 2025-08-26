@@ -53,3 +53,36 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => logger.info(`Server running at http://localhost:${PORT}`));
+// server.js (qo'shimcha)
+'use strict';
+const express = require('express');
+const http = require('http');
+const path = require('path');
+
+const Agent = require('./core/agent');
+const agentRoutes = require('./routes/agent');
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// static (mavjud public/ saqlanadi)
+app.use(express.static(path.join(__dirname, 'public')));
+
+const server = http.createServer(app);
+const agent = new Agent({ pluginsDir: path.join(process.cwd(), 'plugins') });
+
+const attachWS = require('./ws');
+const io = attachWS(server, agent);
+
+// REST
+app.use('/api/agent', agentRoutes({ agent, io }));
+
+// health
+app.get('/api/status', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, async () => {
+  await agent.init();
+  console.log(`CipherCoreLink-Lite server on :${PORT}`);
+});
