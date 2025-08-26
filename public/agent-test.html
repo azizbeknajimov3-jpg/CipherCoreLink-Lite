@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>Agent Test</title></head>
+  <body>
+    <h1>Agent Test</h1>
+    <button id="btnList">List CWD</button>
+    <pre id="out"></pre>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const out = (msg) => document.getElementById('out').textContent += msg + "\n";
+      const ioClient = io();
+
+      ioClient.on('agent:ready', (info)=> out('READY ' + JSON.stringify(info)));
+      ioClient.on('agent:queued', (d)=> out('QUEUED ' + d.id));
+      ioClient.on('agent:running', (d)=> out('RUNNING ' + d.id));
+      ioClient.on('agent:progress', (p)=> out('PROGRESS ' + JSON.stringify(p)));
+      ioClient.on('agent:done', (d)=> out('DONE ' + JSON.stringify(d)));
+      ioClient.on('agent:error', (d)=> out('ERROR ' + JSON.stringify(d)));
+
+      document.getElementById('btnList').onclick = async () => {
+        const r = await fetch('/api/agent/task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'fs.list', payload: { dir: '.' }})
+        });
+        out('POST /task ' + (await r.text()));
+      };
+    </script>
+  </body>
+</html>
