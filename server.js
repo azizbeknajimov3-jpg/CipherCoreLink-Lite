@@ -1,88 +1,71 @@
 // server.js
-import express from 'express';
-import http from 'http';
-import { Server as SocketIOServer } from 'socket.io';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
-import { routeCommand } from './ai/router.js';
-import fs from 'fs';
-import winston from 'winston';
+const express = require("express");
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+const cors = require("cors");
+const path = require("path");
 
+// .env fayldan o‘qish
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.printf(i => `${i.timestamp} [${i.level.toUpperCase()}] ${i.message}`)
-  ),
-  transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: path.join(__dirname, 'logs', 'system.log') })
-  ]
-});
-
 const app = express();
-const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: '*' } });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-// health
-app.get('/api/status', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-
-io.on('connection', (socket) => {
-  logger.info(`Client connected: ${socket.id}`);
-  socket.on('command', async (text) => {
-    logger.info(`CMD from ${socket.id}: ${text}`);
-    try {
-      // report progress via socket.emit('progress', ...)
-      const result = await routeCommand(text, (p) => socket.emit('progress', p));
-      socket.emit('commandResponse', result);
-    } catch (err) {
-      logger.error(err.stack || err.message || err);
-      socket.emit('commandResponse', { ok: false, error: err.message || String(err) });
-    }
-  });
-  socket.on('disconnect', () => logger.info(`Client disconnected: ${socket.id}`));
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => logger.info(`Server running at http://localhost:${PORT}`));
-// server.js (qo'shimcha)
-'use strict';
-const express = require('express');
-const http = require('http');
-const path = require('path');
-
-const Agent = require('./core/agent');
-const agentRoutes = require('./routes/agent');
-
-const app = express();
+// Middlewares
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors());
 
-// static (mavjud public/ saqlanadi)
-app.use(express.static(path.join(__dirname, 'public')));
+// MongoDB ulanishi
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB ulandi"))
+  .catch((err) => console.error("❌ MongoDB xatosi:", err));
 
-const server = http.createServer(app);
-const agent = new Agent({ pluginsDir: path.join(process.cwd(), 'plugins') });
-
-const attachWS = require('./ws');
-const io = attachWS(server, agent);
-
-// REST
-app.use('/api/agent', agentRoutes({ agent, io }));
-
-// health
-app.get('/api/status', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, async () => {
-  await agent.init();
-  console.log(`CipherCoreLink-Lite server on :${PORT}`);
+// Oddiy model misoli
+const UserSchema = new mongoose.Schema({
+  username: String,
+  email: String,
+  password: String,
 });
+
+const User = mongoose.model("User", UserSchema);
+
+// API routes
+app.get("/", (req, res) => {
+  res.send("🚀 CipherCoreLink server ishlayapti!");
+});
+
+// Yangi user qo‘shish
+app.post("/api/register", async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    const newUser = new User({ username, email, password });
+    await newUser.save();
+    res.json({ message: "User qo‘shildi!", user: newUser });
+  } catch (err) {
+    res.status(500).json({ error: "Server xatosi" });
+  }
+});
+
+// Userlarni olish
+app.get("/api/users", async (req, res) => {
+  try {
+    const users = await User.find();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: "Server xatosi" });
+  }
+});
+
+// Static frontend buildni ulash
+app.use(express.static(path.join(__dirname, "client", "dist")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "client", "dist", "index.html"));
+});
+
+// Serverni ishga tushirish
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🌍 Server ${PORT}-portda ishlayapti`));
